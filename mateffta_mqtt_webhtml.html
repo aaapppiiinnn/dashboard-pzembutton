@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard PZEM + Kontrol Relay</title>
+  <style>
+    body { font-family: Arial; padding: 20px; background: #f9f9f9; }
+    h2 { margin-top: 40px; }
+    .data-grid, .button-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 6px;
+      padding: 15px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    button {
+      padding: 10px;
+      border: none;
+      background: #007BFF;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: #0056b3; }
+  </style>
+</head>
+<body>
+
+  <h1>Monitoring & Kontrol - PZEM004T</h1>
+
+  <h2>Data Monitoring</h2>
+  <div class="data-grid">
+    <div class="card" id="tegangan">Voltage: -</div>
+    <div class="card" id="arus">Current: -</div>
+    <div class="card" id="daya">Power: -</div>
+    <div class="card" id="energi">Energy: -</div>
+    <div class="card" id="frekuensi">Frequency: -</div>
+    <div class="card" id="faktordaya">Power Factor: -</div>
+  </div>
+
+  <h2>Kontrol Tombol Virtual</h2>
+  <div class="button-grid" id="buttons"></div>
+
+  <h2>Pengaturan Delay Relay Berurutan (ms)</h2>
+  <div class="card" style="max-width: 300px; margin-bottom: 30px;">
+    <input type="number" id="delayInput" min="10" max="2000" step="10" value="500" style="width: 100%; padding: 8px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc;" />
+    <button id="sendDelayBtn" style="margin-top:10px; width: 100%;">Kirim Delay</button>
+    <p id="currentDelayDisplay" style="margin-top: 10px; font-weight: bold;">Delay saat ini: 500 ms</p>
+  </div>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    // Konfigurasi broker EMQX (ganti jika perlu)
+    const broker = 'wss://c90d68f7.ala.asia-southeast1.emqxsl.com:8084/mqtt';
+    const options = {
+      clientId: 'webclient_' + Math.random().toString(16).substr(2, 8),
+      username: 'afin',
+      password: 'password',
+      keepalive: 60,
+      clean: true,
+    };
+
+    const client = mqtt.connect(broker, options);
+
+    client.on('connect', () => {
+      console.log('✅ Connected to MQTT broker');
+
+      // Subscribe ke topik monitoring (disesuaikan)
+      const topics = [
+        '/monitoring/tegangan',
+        '/monitoring/arus',
+        '/monitoring/daya',
+        '/monitoring/energi',
+        '/monitoring/frekuensi',
+        '/monitoring/faktordaya',
+        '/kontrol/relaySequenceDelay', // subscribe topik delay
+      ];
+      topics.forEach(topic => client.subscribe(topic));
+    });
+
+    client.on('message', (topic, message) => {
+      const payload = message.toString();
+
+      if (topic === '/monitoring/tegangan') document.getElementById('tegangan').innerText = 'Voltage: ' + payload + ' V';
+      else if (topic === '/monitoring/arus') document.getElementById('arus').innerText = 'Current: ' + payload + ' A';
+      else if (topic === '/monitoring/daya') document.getElementById('daya').innerText = 'Power: ' + payload + ' W';
+      else if (topic === '/monitoring/energi') document.getElementById('energi').innerText = 'Energy: ' + payload + ' Wh';
+      else if (topic === '/monitoring/frekuensi') document.getElementById('frekuensi').innerText = 'Frequency: ' + payload + ' Hz';
+      else if (topic === '/monitoring/faktordaya') document.getElementById('faktordaya').innerText = 'Power Factor: ' + payload;
+
+      else if (topic === '/kontrol/relaySequenceDelay') {
+        let val = parseInt(payload);
+        if (!isNaN(val) && val >= 500 && val <= 3000) {
+          delayInput.value = val;
+          currentDelayDisplay.innerText = `Delay saat ini: ${val} ms`;
+        }
+      }
+    });
+
+  // Membuat tombol kontrol
+  const tombolContainer = document.getElementById('buttons');
+  for (let i = 1; i <= 11; i++) {
+    const btn = document.createElement('button');
+    btn.innerText = 'Tombol ' + i;
+    btn.onclick = () => {
+      const payload = 'TOMBOL_' + i;
+      console.log(`Mengirim ke: /kontrol/tombol -> ${payload}`);
+      client.publish('/kontrol/tombol', payload);
+    };
+    tombolContainer.appendChild(btn);
+  }
+
+    // Pengaturan delay relay berurutan
+    const delayInput = document.getElementById('delayInput');
+    const sendDelayBtn = document.getElementById('sendDelayBtn');
+    const currentDelayDisplay = document.getElementById('currentDelayDisplay');
+
+    sendDelayBtn.onclick = () => {
+      let delayValue = parseInt(delayInput.value);
+      if (isNaN(delayValue) || delayValue < 500 || delayValue > 3000) {
+        alert('Masukkan nilai delay antara 500 sampai 3000 ms');
+        return;
+      }
+      client.publish('/kontrol/relaySequenceDelay', delayValue.toString());
+      currentDelayDisplay.innerText = `Delay saat ini: ${delayValue} ms`;
+      console.log(`Delay relay sequence dikirim: ${delayValue} ms`);
+    };
+
+    client.on('error', (err) => {
+      console.error('❌ MQTT Error:', err);
+    });
+  </script>
+
+</body>
+</html>
